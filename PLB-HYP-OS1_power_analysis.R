@@ -71,10 +71,10 @@ analysis_code_comparability_of_procedure_types = function(data, rscale){
   data = data %>%
     filter(description_type == "hypnosis")
 
-  bf_full = lmBF(expectancy ~ trial_type + procedure_type, 
+  bf_full = lmBF(expectancy ~ trial_type + procedure_type + ID, 
                  whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
   
-  bf_reduced = lmBF(expectancy ~ trial_type, whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+  bf_reduced = lmBF(expectancy ~ trial_type + ID, whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
   
   bf_diff = bf_full / bf_reduced
   
@@ -90,7 +90,7 @@ analysis_code_main_lmBF_comparable_procedure_type = function(data, rscale){
   data = data %>%
     filter(description_type == "hypnosis")
   
-  bf_mod = lmBF(expectancy ~ trial_type
+  bf_mod = lmBF(expectancy ~ trial_type + ID
                  , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
   
   bf = 1/matrix(bf_mod)
@@ -103,10 +103,10 @@ analysis_code_main_lmBF_not_comparable_procedure_type = function(data, rscale){
   data = data %>%
     filter(description_type == "hypnosis")
 
-  bf_mod1 = lmBF(expectancy ~ trial_type + procedure_type
+  bf_mod1 = lmBF(expectancy ~ trial_type + procedure_type + ID
                 , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
   
-  bf_mod2 = lmBF(expectancy ~ procedure_type
+  bf_mod2 = lmBF(expectancy ~ procedure_type + ID
                  , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
 
   bf_diff = bf_mod1 / bf_mod2
@@ -226,15 +226,3 @@ bfs = replicate(n = iterations, simulation_plus_analysis(
 
 sum(bfs >= 3)/length(bfs)
 sum(bfs <= 1/3)/length(bfs)
-
-# new rs to implement:
-r_depth_with_exp_same_description_type
-r_depth_with_exp_different_description_type
-r_type_guess_with_exp
-r_hypnotizability_with_exp_described_tures
-r_hypnotizability_with_exp_described_controls
-r_gen_exp_with_exp_described_tures
-r_gen_exp_with_exp_described_controls
-r_depth_with_depth_same_description_type
-r_depth_with_depth_different_description_type
-
