@@ -90,10 +90,15 @@ analysis_code_main_lmBF_comparable_procedure_type = function(data, rscale){
   data = data %>%
     filter(description_type == "hypnosis")
   
-  bf_mod = lmBF(expectancy ~ trial_type + ID
+  bf_mod1 = lmBF(expectancy ~ trial_type + ID
                  , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+ 
+  bf_mod2 = lmBF(expectancy ~ ID
+                , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
   
-  bf = 1/matrix(bf_mod)
+  bf_diff = bf_mod1 / bf_mod2
+  
+  bf = 1/matrix(bf_diff)
   
   return(bf)
 }
