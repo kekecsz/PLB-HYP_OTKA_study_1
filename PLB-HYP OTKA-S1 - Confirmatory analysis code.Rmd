@@ -1,0 +1,119 @@
+---
+title: "PLB-HYP OTKA-S1 - Confirmatory analysis code"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r packages, message=FALSE, warning=FALSE}
+library(BayesFactor) # for ttestBF
+library(MASS) # for mvrnorm
+library(tidyverse) # for tidy coding
+```
+## Introduction
+We will use statistical inference to test the hypotheses. The confirmatory analysis will be conducted on the sample of participants fitting the eligibility criteria when data collection is successfully finished according to the stopping rules. 
+In the confirmatory analysis we will restrict our analysis to the trials with description type: hypnosis.
+We will contrast the likelihood of observing the data we observed under the following two models:
+Model 0 (M0) assumes that the sham hypnosis technique described as hypnosis evokes comparable expected hypnosis depth to the true hypnosis technique described as hypnosis. 
+Model 1 (M1) assumes that the sham hypnosis technique described as hypnosis evokes different expected hypnosis depth than the true hypnosis technique described as hypnosis.
+Until the final data is obtained you can test this code with example data. 
+The example data can be created by using a data simulating code. Link:https://github.com/kekecsz/PLB-HYP_OTKA_study_1/blob/main/Data%20simulation%20for%20confirmatory%20analysis.R
+Example data: https://raw.githubusercontent.com/kekecsz/PLB-HYP_OTKA_study_1/main/PLB_HYP_example_data.csv
+```{r loading data}
+my_data = read.csv()
+my_data
+```
+## Variables
+description_type: hypnosis vs. control procedure
+procedure_type: embedded, whitenoise, relaxation, or confusion
+trial_type: conventional hypnosis vs. sham hypnosis
+Expectancy: an expectation by the recipient of the treatment that the treatment will elicit the desired response, it is a 11 point numerical rating scale ranging from 0 (Not Hypnotized at all) to 10 (Extremely Hypnotized)
+## Comparability of procedure types within the same trial type
+We will start by exploring whether the different procedure types evoke comparable expectancy within each trial type. (That is, testing if there is evidence supporting the comparability of the expectancy evoked by the two sham hypnosis techniques, and the two true hypnosis techniques.)
+We will build two Bayesian mixed effect linear regression models. In the “full model” we will predict expectancy with trial type (sham vs. true) and procedure type (embedded, whitenoise, relaxation, confusion) as predictors, and with the random intercept of participant ID. 
+The reduced model will be the same with the exception that procedure type will not be included in the model. We will contrast the two models using Bayes factor to see whether there is evidence that the two models are comparable.
+```{r analysis_code_comparability_of_procedure_types}
+analysis_code_comparability_of_procedure_types = function(data, rscale){
+  
+  data = my_data %>%
+    filter(description_type == "hypnosis")
+  
+  bf_full = lmBF(expectancy ~ trial_type + procedure_type + ID, 
+                 whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data) # in the “full model" we will predict expectancy with trial type, and procedure type as predictors, and the random intercept of participant ID
+  
+  bf_reduced = lmBF(expectancy ~ trial_type + ID, whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data) # in the reduced model the procedure type is excluded
+  
+  bf_diff = bf_full / bf_reduced # 
+  
+  bf = 1/matrix(bf_diff)
+  
+  return(bf)
+  
+}
+# Bayes factor (M0 vs M1) of the comparability of procedure type
+analysis_code_comparability_of_procedure_types(data= my_data, rscale=1)
+```
+## Testing the main hypothesis
+If in the above mentioned comparability analsysis we find evidence supporting the comparability of the full model with the reduced model, indicating that the procedure types are comparable with each other within the same trial type, we will use the reduced model to make statistical inference on the main hypothesis. Otherwise, we will use the full model for statistical inference.
+For this reason we have two functions below to perform the main statistical test, one using the full model (incuding procedure type), and one using the reduced model (without procedure type).
+### main statistical test function - if procedures types are comparable within the same trial type
+```{r analysis_code_main_lmBF_comparable_procedure_type}
+analysis_code_main_lmBF_comparable_procedure_type = function(data, rscale){
+  data = data %>%
+    filter(description_type == "hypnosis")
+  
+  bf_mod1 = lmBF(expectancy ~ trial_type + ID
+                 , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+ 
+  bf_mod2 = lmBF(expectancy ~ ID
+                , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+  
+  bf_diff = bf_mod1 / bf_mod2
+  
+  bf = 1/matrix(bf_diff)
+  
+  return(bf)
+}
+```
+### main statistical test function - if procedures types are not comparable within the same trial type
+```{r analysis_code_main_lmBF_not_comparable_procedure_type}
+ analysis_code_main_lmBF_not_comparable_procedure_type = function(data, rscale){
+  
+  data = data %>%
+    filter(description_type == "hypnosis")
+  bf_mod1 = lmBF(expectancy ~ trial_type + procedure_type + ID
+                , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+  
+  bf_mod2 = lmBF(expectancy ~ procedure_type + ID
+                 , whichRandom="ID", rscaleFixed = rscale, rscaleCont = rscale, data = data)
+  bf_diff = bf_mod1 / bf_mod2
+  
+  bf = 1/matrix(bf_diff)
+  
+  return(bf)
+}
+```
+### Running the test
+This function performs the comparability analysis (shown above), followed by the appropriate main statistical test chosen based on the result of the comparability analysis. 
+```{r analysis_compiler}
+  analysis_compiler <- function(data, rscale){
+  comparability_of_procedure_types = analysis_code_comparability_of_procedure_types(data, rscale)
+  
+  if(comparability_of_procedure_types >= 3){
+    bf = analysis_code_main_lmBF_comparable_procedure_type(data, rscale)
+  } else if(comparability_of_procedure_types < 3){
+    bf = analysis_code_main_lmBF_not_comparable_procedure_type(data, rscale)
+  }
+  
+  return(bf)
+}
+```
+The function computes the Bayes Factor (M0 vs. M1) corresponding to the effect of trial type (sham vs. true) in the regression model.
+In case the Bayes factor is 3 or more, analysis support the Model 0.
+In case the Bayes factor us under 0.33 then the analysis supports Model 1.
+In case Bayes factor is between 3 and 0.33 then the analysis returned inconclusive report.
+```{r main_analysis}
+analysis_compiler(data=my_data, rscale= 1)
+```
