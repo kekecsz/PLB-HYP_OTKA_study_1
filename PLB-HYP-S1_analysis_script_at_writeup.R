@@ -9,8 +9,8 @@ figure_location = "C:\\Users\\User\\Documents\\"
 ####################################
 # scale parameter for the Bayesian analysis
 rscale_to_use = 1
-# set permuation test number of iterations (10000 will run for a few minutes)
-perm_iter = 1000
+# set permuation test number of iterations (10000 will run for a several minutes on an average work computer)
+perm_iter = 10000
 
 ##############################
 ###  Sensitivity analysis  ###
@@ -36,6 +36,7 @@ library(pbapply) # for progress bar on iterative rerun of the confirmatory analy
 library(boot) # for bootstrapping	
 library(ggpubr) # for ggarrange
 library(grid)
+library(gsheet)
 
 ###############################
 ###  Load custom functions  ###
@@ -91,7 +92,7 @@ mean_boot <- function(data_for_r){
 ##################
 ### Read data  ###
 ##################
-data_pre = read.csv("https://raw.githubusercontent.com/kekecsz/PLB-HYP_OTKA_study_1/refs/heads/main/Data/PLB_HYP_data_MASTER%20-%20Sheet%201%20-%20data_with_power.csv")
+data_pre = read.csv("https://raw.githubusercontent.com/kekecsz/PLB-HYP_OTKA_study_1/refs/heads/main/Data/PLB_HYP_S1_data.csv")
 
 #####################################
 ### Data management - eligibility ###
@@ -238,45 +239,60 @@ data$ID = paste0("ID_", 1:length(data$unique_id))
 
 
 
-### Explore EEG variables
+### Exclude outliers, compute difference scores, and standardize (z-transform) EEG variables of interest
 
-EEG_measures_of_interest = c("FZ_alpha",
-                             "FZ_theta",
-                             "FZ_gamma",
-                             "OZ_alpha",
-                             "OZ_theta",
-                             "OZ_gamma",
-                             "beta1_connect_OZ_PO4",
+## Exclude outliers and z-transform spectral power data
+power_measures_of_interest = c("FZ_alpha",
+                               "FZ_theta",
+                               "FZ_gamma",
+                               "OZ_alpha",
+                               "OZ_theta",
+                               "OZ_gamma")
+
+
+for(i in 1:length(power_measures_of_interest)){
+  for(j in 1:4){
+    experience_var_withnum = paste0(power_measures_of_interest[i], "_z_trans_experience", j)
+    cases_to_exclude = which(abs(as.matrix(data[,experience_var_withnum])-mean(as.matrix(data[,experience_var_withnum]))) > 3*sd(as.matrix(data[,experience_var_withnum]))) ### Removing observations more than 3SD away from the mean in the EEG feature
+    data[cases_to_exclude,experience_var_withnum] = NA
+    print(paste0("outlier excluded from", experience_var_withnum, ": ", sum(is.na(data[,experience_var_withnum]))))
+    
+    output_var_withnum = paste0(power_measures_of_interest[i], "_ebds_", j) ### ebds stands for experience-baseline difference scaled
+    data = data.frame(data, newCol = NA)
+    names(data)[length(names(data))] = output_var_withnum
+    data[,output_var_withnum] = as.numeric(scale(data[,experience_var_withnum]))
+  }
+}
+
+## exclude outliers from connectivity data
+
+connectivity_measures_of_interest = c("beta1_connect_OZ_PO4",
                              "alpha2_connect_PZ_area_FZ_area",
                              "theta_connect_O1_PZ")
 
-
-
-
-for(i in 1:length(EEG_measures_of_interest)){
-  baseline_var = paste0(EEG_measures_of_interest[i], "_baseline1")
+for(i in 1:length(connectivity_measures_of_interest)){
+  baseline_var = paste0(connectivity_measures_of_interest[i], "_baseline1")
   cases_to_exclude = which(abs(as.matrix(data[,baseline_var])-mean(as.matrix(data[,baseline_var]))) > 3*sd(as.matrix(data[,baseline_var]))) ### Removing observations more than 3SD away from the mean in the EEG feature
   data[cases_to_exclude,baseline_var] = NA
   print(paste0("outlier excluded from", baseline_var, ": ", sum(is.na(data[,baseline_var]))))
   for(j in 1:4){
-    experience_var_withnum = paste0(EEG_measures_of_interest[i], "_experience", j)
+    experience_var_withnum = paste0(connectivity_measures_of_interest[i], "_experience", j)
     cases_to_exclude = which(abs(as.matrix(data[,experience_var_withnum])-mean(as.matrix(data[,experience_var_withnum]))) > 3*sd(as.matrix(data[,experience_var_withnum]))) ### Removing observations more than 3SD away from the mean in the EEG feature
     data[cases_to_exclude,experience_var_withnum] = NA
     print(paste0("outlier excluded from", experience_var_withnum, ": ", sum(is.na(data[,experience_var_withnum]))))
   }
 }
 
+### compute the difference of pre-trial "Baseline" and "Experience" phase 
+### of connectivity features of interest
+### We also Z-transform (scale) variables to reduce inter-individual noise, 
+### to avoid multicollinearity, and to aid comparability and visualization across features
 
-### compute the difference of pre-trial "Baseline" and "Experience" phase EEG features 
-### in the power bands and locations of interest
-### We also Z-transform (scale) EEG variables to avoid multicollinearity, and to
-### aid comparability and visualization across features
-
-for(i in 1:length(EEG_measures_of_interest)){
-  baseline_var = paste0(EEG_measures_of_interest[i], "_baseline1")
+for(i in 1:length(connectivity_measures_of_interest)){
+  baseline_var = paste0(connectivity_measures_of_interest[i], "_baseline1")
   for(j in 1:4){
-    experience_var_withnum = paste0(EEG_measures_of_interest[i], "_experience", j)
-    output_var_withnum = paste0(EEG_measures_of_interest[i], "_ebds_", j) ### ebd stands for experience-baseline difference scaled
+    experience_var_withnum = paste0(connectivity_measures_of_interest[i], "_experience", j)
+    output_var_withnum = paste0(connectivity_measures_of_interest[i], "_ebds_", j) ### ebds stands for experience-baseline difference scaled
     data = data.frame(data, newCol = NA)
     names(data)[length(names(data))] = output_var_withnum
     data[,output_var_withnum] = data[,experience_var_withnum]-data[,baseline_var]
@@ -284,7 +300,10 @@ for(i in 1:length(EEG_measures_of_interest)){
   } 
 }
 
-EEG_change_vars_without_trialnum = paste0(EEG_measures_of_interest, "_ebds")
+connectivity_measures_without_trialnum = paste0(connectivity_measures_of_interest, "_ebds")
+power_measures_of_without_trialnum = paste0(power_measures_of_interest, "_ebds")
+
+EEG_change_vars_without_trialnum = c(power_measures_of_without_trialnum, connectivity_measures_without_trialnum)
 
 ### convert data to long format
 
@@ -1403,7 +1422,7 @@ figure_4a = output_table_of_sham_and_desc_diff %>%
 figure_4a
 
 
-figure_4 = data_long %>%
+figure_4b = data_long %>%
   select(FZ_alpha_ebds, description_type) %>% 
   drop_na() %>% 
   ggplot() +
@@ -1443,17 +1462,7 @@ figure_4 = data_long %>%
   ) +
   scale_fill_aaas() +
   coord_flip()
-figure_4
-
-### create high resolution image of figure
-#jpeg(paste0(figure_location, "figure_4.jpg"), width = 17, height = 13, units = 'cm', res = 300)
-#figure_4 # Make plot
-#dev.off()
-
-
-
-
-
+figure_4b
 
 
 
@@ -1694,17 +1703,17 @@ plot_d = data_for_function %>%
   scale_y_continuous(breaks=c(0, 2, 4, 6, 8, 10, 12), limits = c(0,12))
 
 
-figure_5 <- ggarrange(plot_a,plot_b, plot_c, plot_d,
+figure_8 <- ggarrange(plot_a,plot_b, plot_c, plot_d,
                       labels = c("A", "B", "C", "D"),
                       ncol = 2, nrow = 2, 
                       common.legend = TRUE, legend="bottom")
-figure_5
+figure_8
 
 
 
 ### create high resolution image of figure
-#jpeg(paste0(figure_location, "figure_5.jpg"), width = 15, height = 15, units = 'cm', res = 300)
-#figure_5 # Make plot
+#jpeg(paste0(figure_location, "figure_6.jpg"), width = 15, height = 15, units = 'cm', res = 300)
+#figure_6 # Make plot
 #dev.off()
 
 
